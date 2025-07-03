@@ -20,8 +20,10 @@ function MessageArea() {
   let [input,setInput]=useState("")
   let [frontendImage,setFrontendImage]=useState(null)
   let [backendImage,setBackendImage]=useState(null)
+  let [isTyping, setIsTyping] = useState(false)
   let image=useRef()
   let {messages}=useSelector(state=>state.message)
+  let typingTimeout = useRef(null)
   
   const handleImage=(e)=>{
     let file=e.target.files[0]
@@ -46,6 +48,8 @@ function MessageArea() {
       setFrontendImage(null)
       setBackendImage(null)
       setShowPicker(false)
+      // Stop typing indicator when message is sent
+      socket?.emit('stop_typing', selectedUser._id)
     } catch (error) {
       console.log(error)
     }
@@ -57,6 +61,19 @@ function MessageArea() {
 
   const handleInputChange = (e) => {
     setInput(e.target.value)
+    
+    // Clear any existing timeout
+    if (typingTimeout.current) {
+      clearTimeout(typingTimeout.current)
+    }
+
+    // Emit typing event
+    socket?.emit('typing', selectedUser._id)
+
+    // Set new timeout to stop typing after 1 second of no input
+    typingTimeout.current = setTimeout(() => {
+      socket?.emit('stop_typing', selectedUser._id)
+    }, 1000)
   }
   
   useEffect(()=>{
@@ -64,10 +81,37 @@ function MessageArea() {
       dispatch(setMessages([...messages,mess]))
     })
 
+    // Listen for typing status
+    socket?.on("typing", (userId) => {
+      if (userId === selectedUser?._id) {
+        setIsTyping(true)
+      }
+    })
+
+    socket?.on("stop_typing", (userId) => {
+      if (userId === selectedUser?._id) {
+        setIsTyping(false)
+      }
+    })
+
     return ()=>{
       socket?.off("newMessage")
+      socket?.off("typing")
+      socket?.off("stop_typing")
+      // Clear typing timeout on cleanup
+      if (typingTimeout.current) {
+        clearTimeout(typingTimeout.current)
+      }
     }
-  },[messages,setMessages,socket])
+  },[messages, setMessages, socket, selectedUser])
+
+  // Clear typing status when changing users
+  useEffect(() => {
+    setIsTyping(false)
+    if (typingTimeout.current) {
+      clearTimeout(typingTimeout.current)
+    }
+  }, [selectedUser])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -97,6 +141,18 @@ function MessageArea() {
               </div>
               <div className='flex flex-col'>
                 <h1 className='text-white font-semibold text-[20px]'>{selectedUser?.name || "user"}</h1>
+                {isTyping && (
+                  <div className='flex items-center gap-1'>
+                    <span className='text-white/80 text-sm'>typing</span>
+                    <div className='flex gap-1'>
+                      <span className='w-1 h-1 bg-white/80 rounded-full animate-bounce [animation-delay:-0.3s]'></span>
+                      <span className='w-1 h-1 bg-white/80 rounded-full animate-bounce [animation-delay:-0.15s]'></span>
+                      <span className='w-1 h-1 bg-white/80 rounded-full animate-bounce'></span>
+                    </div>
+                  </div>
+                  //animation for typing
+                  
+                )}
               </div>
             </div>
           </div>
